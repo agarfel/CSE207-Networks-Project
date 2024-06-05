@@ -15,13 +15,11 @@ struct message{
     char* info;
 };
 
-void * process_message(char* message){
-    fprintf(stderr, "Processing message...\n");
 
-    char t;
-    char* info;
-    sscanf(message, "%c %s", &t, &info);
-    struct message *m;
+void * process_message(char* message, struct message *m){
+    // fprintf(stderr, "Processing message...\n");
+
+    char t = message[0];
     if (t == 0xFF) {
         m->type = 255;
     } else if (t == 0x01){
@@ -40,8 +38,8 @@ void * process_message(char* message){
         fprintf(stderr, "Message type not recognized: %c\n", t);
         return 0;
     }
-    m->info = info;
-    fprintf(stderr, "... message processed\n");
+    m->info = strdup(&message[1]);
+    // fprintf(stderr, "... message processed\n");
 
     return m;
 }
@@ -53,35 +51,124 @@ int txt(struct message *m){
 }
 
 int fyi(struct message *m){
-    fprintf(stderr, "%c|%c|%c\n-+-+-\n%c|%c|%c\n-+-+-\n%c|%c|%c\n", m->info[0],m->info[1],m->info[2],m->info[3],m->info[4],m->info[5],m->info[6],m->info[7],m->info[8]);
+    int n = m->info[0];
+    // fprintf(stderr, "N: %d\n", n);
+    int board[3][3] = {0}; // 3x3 board initialized to 0 (no moves)
+    fprintf(stderr, "Board: %s\n", m->info);
+    // Iterate over each filled position
+    for (int i = 0; i < n; i++) {
+        int player = m->info[1 + (i * 3)];
+        int col = m->info[2 + (i * 3)];
+        int row = m->info[3 + (i * 3)];
+        fprintf(stderr, "Move: player %d, col %d, row %d\n",player,col,row);
+        // Store the player number in the board
+        fprintf(stderr, "i : %d\n", i);
+        if (col >= 0 && col < 3 && row >= 0 && row < 3) {
+            board[row][col] = player;
+        }
+    }
+
+    // Print the board
+    for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) {
+            if (board[r][c] == 0) {
+                fprintf(stderr, " ");
+            } else {
+                fprintf(stderr, "%d", board[r][c]);
+            }
+            if (c < 2) {
+                fprintf(stderr, "|");
+            }
+        }
+        fprintf(stderr, "\n");
+        if (r < 2) {
+            fprintf(stderr, "-+-+-\n");
+        }
+    }
+
     return 0;
 }
 
-int mym(struct message *m, int sockfd, char* line, struct sockaddr *dest){
-    size_t size = 10; 
-    int msg_len = getline(&line, &size, stdin);
-    /*
-    int *row;
-    int *col;
-    
-    if (sscanf(line, "%d %d", &row, &col) < 0){
-        fprintf(stderr, "Error parsing input\n");
+int mym(struct message *m, int sockfd, struct sockaddr *dest){
+    size_t size = 100;
+    char *line = malloc(size);
+
+    if (!line) {
+        fprintf(stderr, "Failed to allocate memory for line\n");
         return 1;
     }
-    if (!(((0 <= row) && (row <= 2)) && ((0 <= col) && (col <= 2))) ){
-        fprintf(stderr, "Invalid location\n");
-        return 2;
+
+    int msg_len = getline(&line, &size, stdin);
+    if (msg_len == -1) {
+        fprintf(stderr, "Failed to read line\n");
+        free(line);
+        return 1;
     }
-    */
-    line = strcat("MOV ", line);
-    int s = sendto(sockfd, line, strlen(line), 0, (struct sockaddr *)&dest, sizeof(dest));
+
+    // Trim newline character if present
+    if (line[msg_len - 1] == '\n') {
+        line[msg_len - 1] = '\0';
+    }
+
+    int row, col;
+    sscanf(line, "%d %d", &row, &col);
+    fprintf(stderr, "MYM row: %d, col: %d\n", row, col);
+    // Allocate a buffer for the final message
+    unsigned char final_msg[4];
+    final_msg[0] = 0x05;
+    switch(row){
+        case 0:
+            final_msg[1] = 0;
+            break;
+        case 1:
+            final_msg[1] = 1;
+            break;
+        case 2:
+            final_msg[1] = 2;
+            break;
+    }
+    switch(col){
+        case 0:
+            final_msg[2] = 0;
+            break;
+        case 1:
+            final_msg[2] = 1;
+            break;
+        case 2:
+            final_msg[2] = 2;
+            break;
+    }
+    final_msg[3] = '\0';  // Null-terminate for safety
+
+    int s = sendto(sockfd, final_msg, strlen(final_msg), 0, dest, sizeof(*dest));
+    if (s == -1) {
+        fprintf(stderr, "Failed to send message\n");
+        close(sockfd);
+        free(line);
+        return 1;
+    }
+
+    free(line);
+    return 0;
+
+    /*
+    size_t size = 100; 
+    char *line = malloc(100);
+    char *msg = "MOV";
+    int msg_len = getline(&line, &size, stdin);
+    fprintf(stderr, "Read line:%s\n%s\n", line,msg);
+    strcat(msg, line);
+    fprintf(stderr, "Sending: %s\n", msg);
+    int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&dest, sizeof(dest));
     if (s == -1){
         fprintf(stderr, "Failed to send message\n");
         close(sockfd);
+        free(line);
         return 1;
     }
+    free(line);
     return 0;
-
+*/
 }
 
 int end(struct message *m){
@@ -92,31 +179,39 @@ int end(struct message *m){
 
 int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
     socklen_t addr_len = sizeof(dest);
-    fprintf(stderr, "Waiting for message...\n");
+    // fprintf(stderr, "Waiting for message...\n");
     int msg_len = recvfrom(sockfd, line, len, 0, (struct sockaddr *) &dest, &addr_len);
-    fprintf(stderr, "Received: %s\n", line);
+    // fprintf(stderr, "Received: %s\n", line);
     if (msg_len > 0) {
         line[msg_len] = '\0'; // Null-terminate the received string
-        struct message *m = process_message(line);
-        if (m->type == 255) {
+        struct message m;
+        process_message(line, &m);
+        // fprintf(stderr, "Message processed\n");
+        if (m.type == 255) {
             fprintf(stderr, "Game is full\n");
             close(sockfd);
             free(line);
             return 0;
-        } else if (m->type == 1){
-            if(!fyi(m)){
+        } else if (m.type == 1){
+            // fprintf(stderr, "FYI message\n");
+            if(!fyi(&m)){
                 return 1;
             }
-        } else if (m->type == 2){
-            if(!mym(m, sockfd, line, dest)){
+        } else if (m.type == 2){
+            fprintf(stderr, "MYM message\n");
+
+            if(!mym(&m, sockfd, &dest)){
                 return 1;
             }
-        } else if (m->type == 3){
-           if (!end(m)){
-            return 1;
-           }
-        } else if (m->type == 4){
-            if (!txt(m)){
+        } else if (m.type == 3){
+            // fprintf(stderr, "END message\n");
+            if (!end(&m)){
+                return 1;
+            }
+        } else if (m.type == 4){
+            // fprintf(stderr, "TXT message\n");
+
+            if (!txt(&m)){
                 return 1;
             }
         } else {
@@ -134,7 +229,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
 
 
 int main(int argc, char* argv[]) {
-    fprintf(stderr, "Successfully running\n");
+    // fprintf(stderr, "Successfully running\n");
     if (argc < 3){
         fprintf(stderr, "Missing argument. Please enter Port Number.\n");
         return 1;
@@ -151,8 +246,8 @@ int main(int argc, char* argv[]) {
     int sockfd = socket(AF_INET, SOCK_DGRAM,0);
     if (sockfd == -1){
         fprintf(stderr, "Socket creation failed");
-    } else {
-        fprintf(stderr, "Socket created.\n");
+    // } else {
+    //     fprintf(stderr, "Socket created.\n");
     }
 
 	struct sockaddr_in dest;
@@ -168,19 +263,19 @@ int main(int argc, char* argv[]) {
     dest.sin_family = AF_INET;
 
     // Send Hello message
-    char msg[] = {0x04, 'H', 'e', 'l', 'l', 'o', '\0'};
+    unsigned char msg[] = {0x04, 'H', 'e', 'l', 'l', 'o', '\0'};
     int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&dest, sizeof(dest));
     if (s == -1){
         fprintf(stderr, "Failed to send message\n");
         close(sockfd);
         return 4;
     }
-    fprintf(stderr, "Hello sent\n");
+    // fprintf(stderr, "Hello sent\n");
     // Receive Welcome message
-    char *line = malloc(100);
+    char *line = malloc(1000);
     while(1){
-        fprintf(stderr, "Loop entered\n");
-        if (!get_message(sockfd, line, 100, (struct sockaddr *)&dest)){
+        // fprintf(stderr, "Loop entered\n");
+        if (!get_message(sockfd, line, 1000, (struct sockaddr *)&dest)){
             fprintf(stderr, "Error encountered\n");
             return 1;
         }
