@@ -12,7 +12,7 @@
 
 struct message{
     int type;
-    char* info;
+    unsigned char* info;
 };
 
 
@@ -52,19 +52,15 @@ int txt(struct message *m){
 
 int fyi(struct message *m){
     int n = m->info[0];
-    // fprintf(stderr, "N: %d\n", n);
-    int board[3][3] = {0}; // 3x3 board initialized to 0 (no moves)
-    fprintf(stderr, "Board: %s\n", m->info);
+    unsigned char board[3][3] = {0}; // 3x3 board initialized to 0 (no moves)
     // Iterate over each filled position
     for (int i = 0; i < n; i++) {
-        int player = m->info[1 + (i * 3)];
-        int col = m->info[2 + (i * 3)];
-        int row = m->info[3 + (i * 3)];
-        fprintf(stderr, "Move: player %d, col %d, row %d\n",player,col,row);
-        // Store the player number in the board
-        fprintf(stderr, "i : %d\n", i);
+        unsigned char player = m->info[(i * 3)];
+        unsigned char col = m->info[1 + (i * 3)];
+        unsigned char row = m->info[2 + (i * 3)];
         if (col >= 0 && col < 3 && row >= 0 && row < 3) {
             board[row][col] = player;
+            fprintf(stderr, "player: %u, col: %u, row: %u\n", player, col, row);
         }
     }
 
@@ -72,17 +68,19 @@ int fyi(struct message *m){
     for (int r = 0; r < 3; r++) {
         for (int c = 0; c < 3; c++) {
             if (board[r][c] == 0) {
-                fprintf(stderr, " ");
-            } else {
-                fprintf(stderr, "%d", board[r][c]);
+                fprintf(stdout, " ");
+            } else if (board[r][c] == 1) {
+                fprintf(stdout, "X");
+            } else if (board[r][c] == 2) {
+                fprintf(stdout, "O");
             }
             if (c < 2) {
-                fprintf(stderr, "|");
+                fprintf(stdout, "|");
             }
         }
-        fprintf(stderr, "\n");
+        fprintf(stdout, "\n");
         if (r < 2) {
-            fprintf(stderr, "-+-+-\n");
+            fprintf(stdout, "-+-+-\n");
         }
     }
 
@@ -98,6 +96,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
         return 1;
     }
 
+    fprintf(stdout, "Enter your move (column and row separated by space): ");
     int msg_len = getline(&line, &size, stdin);
     if (msg_len == -1) {
         fprintf(stderr, "Failed to read line\n");
@@ -111,36 +110,18 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
     }
 
     int row, col;
-    sscanf(line, "%d %d", &row, &col);
-    fprintf(stderr, "MYM row: %d, col: %d\n", row, col);
-    // Allocate a buffer for the final message
-    unsigned char final_msg[4];
-    final_msg[0] = 0x05;
-    switch(row){
-        case 0:
-            final_msg[1] = 0;
-            break;
-        case 1:
-            final_msg[1] = 1;
-            break;
-        case 2:
-            final_msg[1] = 2;
-            break;
+    if (sscanf(line, "%d %d", &col, &row) != 2 || row < 0 || row > 2 || col < 0 || col > 2) {
+        fprintf(stderr, "Invalid input. Please enter valid row and column numbers (0, 1, or 2).\n");
+        free(line);
+        return 1;
     }
-    switch(col){
-        case 0:
-            final_msg[2] = 0;
-            break;
-        case 1:
-            final_msg[2] = 1;
-            break;
-        case 2:
-            final_msg[2] = 2;
-            break;
-    }
-    final_msg[3] = '\0';  // Null-terminate for safety
 
-    int s = sendto(sockfd, final_msg, strlen(final_msg), 0, dest, sizeof(*dest));
+    unsigned char final_msg[3];
+    final_msg[0] = 0x05; // MOV message type
+    final_msg[1] = col;
+    final_msg[2] = row;
+
+    int s = sendto(sockfd, final_msg, sizeof(final_msg), 0, dest, sizeof(*dest));
     if (s == -1) {
         fprintf(stderr, "Failed to send message\n");
         close(sockfd);
@@ -150,25 +131,6 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
 
     free(line);
     return 0;
-
-    /*
-    size_t size = 100; 
-    char *line = malloc(100);
-    char *msg = "MOV";
-    int msg_len = getline(&line, &size, stdin);
-    fprintf(stderr, "Read line:%s\n%s\n", line,msg);
-    strcat(msg, line);
-    fprintf(stderr, "Sending: %s\n", msg);
-    int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&dest, sizeof(dest));
-    if (s == -1){
-        fprintf(stderr, "Failed to send message\n");
-        close(sockfd);
-        free(line);
-        return 1;
-    }
-    free(line);
-    return 0;
-*/
 }
 
 int end(struct message *m){
