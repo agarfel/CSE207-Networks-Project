@@ -19,7 +19,7 @@ struct message{
 void * process_message(char* message, struct message *m){
     // fprintf(stderr, "Processing message...\n");
 
-    char t = message[0];
+    unsigned char t = message[0];
     if (t == 0xFF) {
         m->type = 255;
     } else if (t == 0x01){
@@ -52,18 +52,19 @@ int txt(struct message *m){
 
 int fyi(struct message *m){
     int n = m->info[0];
-    unsigned char board[3][3] = {0}; // 3x3 board initialized to 0 (no moves)
+    int board[3][3] = {0}; // 3x3 board initialized to 0 (no moves)
     // Iterate over each filled position
     for (int i = 0; i < n; i++) {
-        unsigned char player = m->info[(i * 3)];
-        unsigned char col = m->info[1 + (i * 3)];
-        unsigned char row = m->info[2 + (i * 3)];
+        fprintf(stderr, "%02X", m->info[i]);
+        int player =(int) m->info[1 + (i * 3)];
+        int row = (int) m->info[2 + (i * 3)];
+        int col = (int)  m->info[3 + (i * 3)];
         if (col >= 0 && col < 3 && row >= 0 && row < 3) {
             board[row][col] = player;
-            fprintf(stderr, "player: %u, col: %u, row: %u\n", player, col, row);
+            //fprintf(stderr, "player: %d, col: %d, row: %d\n", player, col, row);
         }
     }
-
+    fprintf(stderr, "\n");
     // Print the board
     for (int r = 0; r < 3; r++) {
         for (int c = 0; c < 3; c++) {
@@ -89,7 +90,7 @@ int fyi(struct message *m){
 
 int mym(struct message *m, int sockfd, struct sockaddr *dest){
     size_t size = 100;
-    char *line = malloc(size);
+    unsigned char *line = malloc(size);
 
     if (!line) {
         fprintf(stderr, "Failed to allocate memory for line\n");
