@@ -12,14 +12,14 @@
 
 struct message{
     int type;
-    unsigned char* info;
+    char* info;
 };
 
 
 void * process_message(char* message, struct message *m){
     // fprintf(stderr, "Processing message...\n");
 
-    unsigned char t = message[0];
+    char t = message[0];
     if (t == 0xFF) {
         m->type = 255;
     } else if (t == 0x01){
@@ -38,7 +38,7 @@ void * process_message(char* message, struct message *m){
         fprintf(stderr, "Message type not recognized: %c\n", t);
         return 0;
     }
-    m->info = strdup(&message[1]);
+    m->info = &message[1];
     // fprintf(stderr, "... message processed\n");
 
     return m;
@@ -51,17 +51,24 @@ int txt(struct message *m){
 }
 
 int fyi(struct message *m){
-    int n = m->info[0];
-    int board[3][3] = {0}; // 3x3 board initialized to 0 (no moves)
+    int n = (int) m->info[0];
+    char *buf = m->info;
+    int board[3][3] = {0};
+    //int *board_info = &m->info[1];
     // Iterate over each filled position
+    //fprintf(stderr, "n: %d\n",n);
+    int player, col, row;
     for (int i = 0; i < n; i++) {
-        fprintf(stderr, "%02X", m->info[i]);
-        int player =(int) m->info[1 + (i * 3)];
-        int row = (int) m->info[2 + (i * 3)];
-        int col = (int)  m->info[3 + (i * 3)];
+        //fprintf(stderr, "play: %d\n",i);
+        player = *(buf + 1 +(i*3));
+        //fprintf(stderr, "player: %d\n",player);
+        col = *(buf + 2 +(i*3));
+        //fprintf(stderr, "col: %d\n",col);
+        row = *(buf + 3 +(i*3));
+        //fprintf(stderr, "row: %d\n",row);
         if (col >= 0 && col < 3 && row >= 0 && row < 3) {
             board[row][col] = player;
-            //fprintf(stderr, "player: %d, col: %d, row: %d\n", player, col, row);
+            fprintf(stderr, "player: %d, col: %d, row: %d\n", player, col, row);
         }
     }
     fprintf(stderr, "\n");
@@ -135,7 +142,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
 }
 
 int end(struct message *m){
-    fprintf(stderr, "Winner: player %s\n", m->info);
+    fprintf(stderr, "Winner: player %u\n", m->info[0]);
     return 0;
 }
 
@@ -149,7 +156,8 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
         line[msg_len] = '\0'; // Null-terminate the received string
         struct message m;
         process_message(line, &m);
-        // fprintf(stderr, "Message processed\n");
+
+        fprintf(stderr, "[R] [%d] (%d bytes)\n", m.type, msg_len);
         if (m.type == 255) {
             fprintf(stderr, "Game is full\n");
             close(sockfd);
@@ -161,7 +169,6 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
                 return 1;
             }
         } else if (m.type == 2){
-            fprintf(stderr, "MYM message\n");
 
             if(!mym(&m, sockfd, &dest)){
                 return 1;
