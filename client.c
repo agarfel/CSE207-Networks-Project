@@ -151,7 +151,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
     socklen_t addr_len = sizeof(dest);
     // fprintf(stderr, "Waiting for message...\n");
     int msg_len = recvfrom(sockfd, line, len, 0, (struct sockaddr *) &dest, &addr_len);
-    // fprintf(stderr, "Received: %s\n", line);
+    fprintf(stderr, "Received: %s\n", line);
     if (msg_len > 0) {
         line[msg_len] = '\0'; // Null-terminate the received string
         struct message m;

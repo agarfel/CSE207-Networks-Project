@@ -41,7 +41,7 @@ void * process_message(char* message, struct message *m){
     return m;
 }
 
-void check(){
+void check() {
     int n = (int) moves[0];
     char *buf = moves;
     int board[3][3] = {0};
@@ -62,41 +62,67 @@ void check(){
         }
     }
 
-    for (int i = 0; i<3; i++){
-        if (board[i][0] == board[i][1] == board[i][2] != 0){
+    // Check rows and columns for a winner
+    for (int i = 0; i < 3; i++) {
+        // Check rows
+        if ((board[i][0] == board[i][1]) && (board[i][1] == board[i][2]) && (board[i][0] != 0)) {
             winner = board[i][0];
-        } else if (board[0][i] == board[1][i] == board[2][i] != 0){
-            winner = board[i][0];
+            return;
+        }
+        // Check columns
+        if ((board[0][i] == board[1][i]) && (board[1][i] == board[2][i]) && (board[0][i] != 0)) {
+            winner = board[0][i];
+            return;
         }
     }
-    if (board[0][0] == board[1][1] == board[2][2] != 0){
-            winner = board[0][0];
-        } else if (board[0][2] == board[1][1] == board[2][0] != 0){
-            winner = board[2][0];
-        }
-    int draw = 0;
-    for (int i=0; i<3; i++){
-        for (int j=0; j<3; j++){
-            if (board[i][j] == 0){
-                draw = 1;
+
+    // Check diagonals for a winner
+    if ((board[0][0] == board[1][1]) && (board[1][1] == board[2][2]) && (board[0][0] != 0)) {
+        winner = board[0][0];
+        return;
+    }
+    if ((board[0][2] == board[1][1]) && (board[1][1] == board[2][0]) && (board[0][2] != 0)) {
+        winner = board[0][2];
+        return;
+    }
+
+    // Check for draw
+    int draw = 1;  // Assume draw initially
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            if (board[i][j] == 0) {
+                draw = 0;  // Found an empty cell, not a draw
                 break;
             }
         }
+        if (!draw) {
+            break;
+        }
     }
-    if (draw == 0){
-        winner = 255;
+
+    if (draw) {
+        winner = 255;  // Indicate draw
     }
-    return;
 }
 
 int txt(struct message *m){
     fprintf(stderr, "[R] [TXT] %s\n", m->info);
-    if (strcmp(m->info, "Hello")){
-        fprintf(stderr, "Received hello\n");
+
+    // Check if the received message is "Hello"
+    unsigned char hello[] = {'H', 'e', 'l', 'l', 'o', '\0'};
+    if (strcmp(m->info, hello) == 0) {
+        //fprintf(stderr, "Received hello\n");
         if (nclients == 0){
             player1 = m->client_addr;
-            unsigned char msg[] = {0x04};
-            msg[1] = "Welcome! You are player 1 in game 0, you play with X.";
+            unsigned char *msg = malloc(500);
+            if (!msg) {
+                fprintf(stderr, "Memory allocation failed\n");
+                close(sockfd);
+                return 4;
+            }
+            msg[0] = 4;
+            strcpy((char*)&msg[1], "Welcome! You are player 1 in game 0, you play with X.");
+            //fprintf(stderr, "sending: %s\n", msg);
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, sizeof(player1));
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
@@ -104,12 +130,19 @@ int txt(struct message *m){
                 return 4;
                 }
             nclients = 1;
-            fprintf(stderr, "Welcomed player 1\n");
+            //fprintf(stderr, "Welcomed player 1\n");
 
         } else if (nclients == 1){
             player2 = m->client_addr;
-            unsigned char msg[] = {0x04};
-            msg[1] = "Welcome! You are player 2 in game 0, you play with O.";
+            unsigned char *msg = malloc(500);
+            if (!msg) {
+                fprintf(stderr, "Memory allocation failed\n");
+                close(sockfd);
+                return 4;
+            }
+            msg[0] = 4;
+            strcpy((char*)&msg[1], "Welcome! You are player 2 in game 0, you play with O.");
+            //fprintf(stderr, "sending: %s\n", msg);
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, sizeof(player2));
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
@@ -129,22 +162,30 @@ int txt(struct message *m){
             fprintf(stderr, "Blocked player, game full\n");
         }
     }
+
     return 0;
 }
 
 int mov(struct message *m, int player){
-    moves[0] = moves[0]+1;
-    *last = player;
-    *(last+1) = m->info;
+    moves[0] = (char) (((int) moves[0]) +1);
+    *(last+1) =(char) player;
+    *(last+2) = (char) m->info[0];
+    *(last+3) = (char) m->info[1];
+
     last = last+3;
     check();
     return 0;
 }
 
 int send_fyi(int player){
+    char *msg = malloc(500);
+    msg[0] = 1;
+    int l = ((int)moves[0])*3 +1;
+    strncpy((char*)&msg[1], moves, l);
+    fprintf(stderr, "%s\n",msg);
     int len = (moves[0]*3) + 2;
     if (player == 1){
-        int s = sendto(sockfd, moves, len, 0, (struct sockaddr *)&(player1), sizeof(player1));
+        int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player1), sizeof(player1));
         if (s == -1){
             fprintf(stderr, "Failed to send message\n");
             close(sockfd);
@@ -158,6 +199,7 @@ int send_fyi(int player){
             return 4;
         }
     }
+    free(msg);
 }
 
 int send_mym(int player){
@@ -165,7 +207,9 @@ int send_mym(int player){
     send_fyi(player);
 
     // Send MYM
-    unsigned char msg[] = {0x02};
+
+    unsigned char *msg = malloc(1);
+    msg[0] = 2;
     if (player == 1){
         int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), sizeof(player1));
         if (s == -1){
@@ -270,9 +314,12 @@ int main(int argc, char* argv[]) {
             process_message(line, &m);
             if (m.type == 4){
                 txt(&m);
+
             }
         }
+        free(line);
     }
+    fprintf(stderr, "Starting Game\n");
     moves = malloc(1000);
     last = moves;
     while(1){
