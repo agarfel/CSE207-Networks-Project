@@ -104,38 +104,40 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
         return 1;
     }
 
-    fprintf(stdout, "Enter your move (column and row separated by space): ");
-    int msg_len = getline(&line, &size, stdin);
-    if (msg_len == -1) {
-        fprintf(stderr, "Failed to read line\n");
-        free(line);
-        return 1;
-    }
+    while (1) {
+        fprintf(stdout, "Enter your move (column and row separated by space): ");
+        int msg_len = getline((char **)&line, &size, stdin);
+        if (msg_len == -1) {
+            fprintf(stderr, "Failed to read line\n");
+            free(line);
+            return 1;
+        }
 
-    // Trim newline character if present
-    if (line[msg_len - 1] == '\n') {
-        line[msg_len - 1] = '\0';
-    }
+        // Trim newline character if present
+        if (line[msg_len - 1] == '\n') {
+            line[msg_len - 1] = '\0';
+        }
 
-    int row, col;
-    if (sscanf(line, "%d %d", &col, &row) != 2 || row < 0 || row > 2 || col < 0 || col > 2) {
-        fprintf(stderr, "Invalid input. Please enter valid row and column numbers (0, 1, or 2).\n");
-        free(line);
-        mym(&m, sockfd, &dest);
-        return 0;
-    }
+        int row, col;
+        if (sscanf((char *)line, "%d %d", &col, &row) != 2 || row < 0 || row > 2 || col < 0 || col > 2) {
+            fprintf(stderr, "Invalid input. Please enter valid row and column numbers (0, 1, or 2).\n");
+            continue; // prompt for input again
+        }
 
-    unsigned char final_msg[3];
-    final_msg[0] = 0x05; // MOV message type
-    final_msg[1] = col;
-    final_msg[2] = row;
+        unsigned char final_msg[3];
+        final_msg[0] = 0x05; // MOV message type
+        final_msg[1] = col;
+        final_msg[2] = row;
 
-    int s = sendto(sockfd, final_msg, sizeof(final_msg), 0, dest, sizeof(*dest));
-    if (s == -1) {
-        fprintf(stderr, "Failed to send message\n");
-        close(sockfd);
-        free(line);
-        return 1;
+        int s = sendto(sockfd, final_msg, sizeof(final_msg), 0, dest, sizeof(*dest));
+        if (s == -1) {
+            fprintf(stderr, "Failed to send message\n");
+            close(sockfd);
+            free(line);
+            return 1;
+        }
+
+        break; // exit loop after successful input and send
     }
 
     free(line);
@@ -152,13 +154,13 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
     socklen_t addr_len = sizeof(dest);
     // fprintf(stderr, "Waiting for message...\n");
     int msg_len = recvfrom(sockfd, line, len, 0, (struct sockaddr *) &dest, &addr_len);
-    fprintf(stderr, "Received: %s\n", line);
+    //fprintf(stderr, "Received: %s\n", line);
     if (msg_len > 0) {
         line[msg_len] = '\0'; // Null-terminate the received string
         struct message m;
         process_message(line, &m);
 
-        fprintf(stderr, "[R] [%d] (%d bytes)\n", m.type, msg_len);
+        //fprintf(stderr, "[R] [%d] (%d bytes)\n", m.type, msg_len);
         if (m.type == 255) {
             fprintf(stderr, "Game is full\n");
             close(sockfd);
@@ -171,7 +173,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
             }
         } else if (m.type == 2){
 
-            if(!mym(&m, sockfd, &dest)){
+            if(!mym(&m, sockfd, dest)){
                 return 1;
             }
         } else if (m.type == 3){
@@ -192,7 +194,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
             return 5;
         }
     } else {
-        perror("Failed to receive message");
+        fprintf(stderr, "Failed to receive message");
         return 9;
     }
     return 0;
@@ -234,7 +236,7 @@ int main(int argc, char* argv[]) {
     dest.sin_family = AF_INET;
 
     // Send Hello message
-    unsigned char msg[] = {0x04, 'H', 'e', 'l', 'l', 'o', '\0'};
+    char msg[] = {0x04, 'H', 'e', 'l', 'l', 'o', '\0'};
     int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&dest, sizeof(dest));
     if (s == -1){
         fprintf(stderr, "Failed to send message\n");

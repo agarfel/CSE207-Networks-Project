@@ -1,7 +1,7 @@
 all: client myserver
 
 clean:
-	rm -f client.o client
+	rm -f client.o client myserver myserver.o
 
 client: client.o
 	cc -g -o client client.o

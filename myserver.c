@@ -17,6 +17,9 @@ char *moves;
 char *last;
 int board[3][3] = {0};
 int winner = 0;
+socklen_t clilen;
+
+int send_mym(int);
 
 struct message{
     int type;
@@ -38,7 +41,6 @@ void * process_message(char* message, struct message *m){
     }
     m->info = &message[1];
     // fprintf(stderr, "... message processed\n");
-
     return m;
 }
 
@@ -90,12 +92,12 @@ int txt(struct message *m){
     fprintf(stderr, "[R] [TXT] %s\n", m->info);
 
     // Check if the received message is "Hello"
-    unsigned char hello[] = {'H', 'e', 'l', 'l', 'o', '\0'};
+    char hello[] = {'H', 'e', 'l', 'l', 'o', '\0'};
     if (strcmp(m->info, hello) == 0) {
         //fprintf(stderr, "Received hello\n");
         if (nclients == 0){
             player1 = m->client_addr;
-            unsigned char *msg = malloc(500);
+            char *msg = malloc(500);
             if (!msg) {
                 fprintf(stderr, "Memory allocation failed\n");
                 close(sockfd);
@@ -104,18 +106,19 @@ int txt(struct message *m){
             msg[0] = 4;
             strcpy((char*)&msg[1], "Welcome! You are player 1 in game 0, you play with X.");
             //fprintf(stderr, "sending: %s\n", msg);
-            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, sizeof(player1));
+            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, clilen);
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
                 close(sockfd);
                 return 4;
                 }
+            fprintf(stderr, "[S] [TXT] [1] %s\n", msg+1);
             nclients = 1;
             //fprintf(stderr, "Welcomed player 1\n");
 
         } else if (nclients == 1){
             player2 = m->client_addr;
-            unsigned char *msg = malloc(500);
+            char *msg = malloc(500);
             if (!msg) {
                 fprintf(stderr, "Memory allocation failed\n");
                 close(sockfd);
@@ -124,23 +127,25 @@ int txt(struct message *m){
             msg[0] = 4;
             strcpy((char*)&msg[1], "Welcome! You are player 2 in game 0, you play with O.");
             //fprintf(stderr, "sending: %s\n", msg);
-            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, sizeof(player2));
+            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, clilen);
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
+            fprintf(stderr, "[S] [TXT] [2] %s\n", msg+1);
             nclients = 2;
-            fprintf(stderr, "Welcomed player 2\n");
+            //fprintf(stderr, "Welcomed player 2\n");
         } else {
-            unsigned char msg[] = {0x03, 0xFF};
+            char msg[] = {0x03, 0xFF};
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&( m->client_addr), sizeof(m->client_addr));
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
-            fprintf(stderr, "Blocked player, game full\n");
+            fprintf(stderr, "[S] [TXT] [] %s\n", msg+1);
+            //fprintf(stderr, "Blocked player, game full\n");
         }
     }
 
@@ -148,32 +153,35 @@ int txt(struct message *m){
 }
 
 int mov(struct message *m, int player){
-    moves[0] = (char) (((int) moves[0]) +1);
-    *(last+1) =(char) player;
-    *(last+2) = (char) m->info[0];
-    *(last+3) = (char) m->info[1];
-    if (board[m->info[1]][ m->info[0]] != 0){
-        char* msg = msg[0] = 4;
+
+    if (board[(int) m->info[1]][(int) m->info[0]] != 0){
+        char* msg = malloc(20);
+        msg[0] = 4;
         strcpy((char*)&msg[1], "Invalid move.");
         if (player == 1){
-            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), sizeof(player1));
+            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), clilen);
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
         } else {
-            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), sizeof(player2));
+            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), clilen);
             if (s == -1){
                 fprintf(stderr, "Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
-        send_mym(player);
         }
+        send_mym(player);
+
         return 0;
     }
-    board[m->info[1]][ m->info[0]] = player;
+    moves[0] = (char) (((int) moves[0]) +1);
+    *(last+1) =(char) player;
+    *(last+2) = (char) m->info[0];
+    *(last+3) = (char) m->info[1];
+    board[(int) m->info[1]][(int) m->info[0]] = player;
 
     last = last+3;
     check();
@@ -185,48 +193,50 @@ int send_fyi(int player){
     msg[0] = 1;
     int l = ((int)moves[0])*3 +1;
     memcpy((char*)&msg[1], moves, l);
-    fprintf(stderr, "%s\n",msg);
+    //fprintf(stderr, "%s\n",msg);
     int len = (moves[0]*3) + 2;
     if (player == 1){
-        int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player1), sizeof(player1));
+        int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player1), clilen);
         if (s == -1){
             fprintf(stderr, "Failed to send message\n");
             close(sockfd);
             return 4;
         }
+        fprintf(stderr, "[S] [FYI] [%d]\n",player);
     } else {
-        int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player2), sizeof(player2));
+        int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player2), clilen);
         if (s == -1){
             fprintf(stderr, "Failed to send message\n");
             close(sockfd);
             return 4;
         }
+        fprintf(stderr, "[S] [FYI] [%d]\n", player);
     }
     free(msg);
+    return 0;
 }
 
 int send_mym(int player){
-    // Send FYI
-    send_fyi(player);
-
     // Send MYM
 
-    unsigned char *msg = malloc(1);
+    char *msg = malloc(1);
     msg[0] = 2;
     if (player == 1){
-        int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), sizeof(player1));
+        int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), clilen);
         if (s == -1){
             fprintf(stderr, "Failed to send message\n");
             close(sockfd);
             return 4;
         }
+        fprintf(stderr, "[S] [MYM] [%d]\n", player);
     } else {
-        int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), sizeof(player2));
+        int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), clilen);
         if (s == -1){
             fprintf(stderr, "Failed to send message\n");
             close(sockfd);
             return 4;
         }
+        fprintf(stderr, "[S] [MYM] [%d]\n", player);
     }
 
     // Receive MOV
@@ -234,37 +244,41 @@ int send_mym(int player){
     int len = 10;
     int msg_len;
     if (player == 1){
-        msg_len = recvfrom(sockfd, line, len, (unsigned int) 0, (struct sockaddr *) &player1, sizeof(player1));
+        msg_len = recvfrom(sockfd, line, len, (unsigned int) 0, (struct sockaddr *) &player1, &clilen);
     } else {
-        msg_len = recvfrom(sockfd, line, len, (unsigned int) 0, (struct sockaddr *) &player2, sizeof(player2));
+        msg_len = recvfrom(sockfd, line, len, (unsigned int) 0, (struct sockaddr *) &player2, &clilen);
     }
     if (msg_len != 0){
         line[msg_len] = '\0'; // Null-terminate the received string
         struct message m;
         process_message(line, &m);
         if (m.type == 5){
+            fprintf(stderr, "[R] [MOV] [%d] %s\n", player, m.info);
             mov(&m, player);
         } else {
             fprintf(stderr, "Received wrong message type\n");
             return 5;
         }
     }
+    return 0;
 }
 
 void send_end(){
-    unsigned char msg[] = {0x03, winner};
-    int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, sizeof(player1));
+    char msg[] = {0x03, winner};
+    int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, clilen);
     if (s == -1){
         fprintf(stderr, "Failed to send message\n");
         close(sockfd);
-        return 4;
+        return;
     }
-    s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, sizeof(player2));
+    fprintf(stderr, "[S] [END] [1] %d\n", winner);
+    s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, clilen);
     if (s == -1){
         fprintf(stderr, "Failed to send message\n");
         close(sockfd);
-        return 4;
+        return;
     }
+    fprintf(stderr, "[S] [END] [2] %d\n", winner);
 }
 
 int main(int argc, char* argv[]) {
@@ -308,7 +322,7 @@ int main(int argc, char* argv[]) {
         char *line = malloc(100);
         int len = 100;
         struct sockaddr_in addr_client;
-        socklen_t clilen = sizeof(addr_client);
+        clilen = sizeof(addr_client);
         int msg_len = recvfrom(sockfd, line, len, (unsigned int) 0, (struct sockaddr *) &addr_client, &clilen);
 		if (msg_len != 0){
             line[msg_len] = '\0'; // Null-terminate the received string
@@ -322,19 +336,24 @@ int main(int argc, char* argv[]) {
         }
         free(line);
     }
-    fprintf(stderr, "Starting Game\n");
+    fprintf(stderr, "STARTING GAME\n");
     moves = malloc(1000);
     last = moves;
     while(1){
+        send_fyi(1);
+
         send_mym(1);
         if (winner != 0){
             break;
         }
+        send_fyi(2);
+
         send_mym(2);
         if (winner != 0){
             break;
         }
     }
+    fprintf(stderr, "GAME OVER\n");
 
     send_end();
     return 0;
