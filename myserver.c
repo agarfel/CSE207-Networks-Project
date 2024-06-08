@@ -15,6 +15,7 @@ struct sockaddr_in player1;
 struct sockaddr_in player2;
 char *moves;
 char *last;
+int board[3][3] = {0};
 int winner = 0;
 
 struct message{
@@ -42,26 +43,6 @@ void * process_message(char* message, struct message *m){
 }
 
 void check() {
-    int n = (int) moves[0];
-    char *buf = moves;
-    int board[3][3] = {0};
-    //int *board_info = &m->info[1];
-    // Iterate over each filled position
-    //fprintf(stderr, "n: %d\n",n);
-    int player, col, row;
-    for (int i = 0; i < n; i++) {
-        //fprintf(stderr, "play: %d\n",i);
-        player = *(buf + 1 +(i*3));
-        //fprintf(stderr, "player: %d\n",player);
-        col = *(buf + 2 +(i*3));
-        //fprintf(stderr, "col: %d\n",col);
-        row = *(buf + 3 +(i*3));
-        //fprintf(stderr, "row: %d\n",row);
-        if (col >= 0 && col < 3 && row >= 0 && row < 3) {
-            board[row][col] = player;
-        }
-    }
-
     // Check rows and columns for a winner
     for (int i = 0; i < 3; i++) {
         // Check rows
@@ -171,6 +152,28 @@ int mov(struct message *m, int player){
     *(last+1) =(char) player;
     *(last+2) = (char) m->info[0];
     *(last+3) = (char) m->info[1];
+    if (board[m->info[1]][ m->info[0]] != 0){
+        char* msg = msg[0] = 4;
+        strcpy((char*)&msg[1], "Invalid move.");
+        if (player == 1){
+            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), sizeof(player1));
+            if (s == -1){
+                fprintf(stderr, "Failed to send message\n");
+                close(sockfd);
+                return 4;
+            }
+        } else {
+            int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), sizeof(player2));
+            if (s == -1){
+                fprintf(stderr, "Failed to send message\n");
+                close(sockfd);
+                return 4;
+            }
+        send_mym(player);
+        }
+        return 0;
+    }
+    board[m->info[1]][ m->info[0]] = player;
 
     last = last+3;
     check();

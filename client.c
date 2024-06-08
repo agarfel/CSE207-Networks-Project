@@ -121,7 +121,8 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
     if (sscanf(line, "%d %d", &col, &row) != 2 || row < 0 || row > 2 || col < 0 || col > 2) {
         fprintf(stderr, "Invalid input. Please enter valid row and column numbers (0, 1, or 2).\n");
         free(line);
-        return 1;
+        mym(&m, sockfd, &dest);
+        return 0;
     }
 
     unsigned char final_msg[3];
