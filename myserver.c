@@ -181,7 +181,7 @@ int send_fyi(int player){
     char *msg = malloc(500);
     msg[0] = 1;
     int l = ((int)moves[0])*3 +1;
-    strncpy((char*)&msg[1], moves, l);
+    memcpy((char*)&msg[1], moves, l);
     fprintf(stderr, "%s\n",msg);
     int len = (moves[0]*3) + 2;
     if (player == 1){
@@ -192,7 +192,7 @@ int send_fyi(int player){
             return 4;
         }
     } else {
-        int s = sendto(sockfd, moves, strlen(moves), 0, (struct sockaddr *)&(player2), sizeof(player2));
+        int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player2), sizeof(player2));
         if (s == -1){
             fprintf(stderr, "Failed to send message\n");
             close(sockfd);
