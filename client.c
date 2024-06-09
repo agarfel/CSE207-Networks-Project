@@ -100,7 +100,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
     unsigned char *line = malloc(size);
 
     if (!line) {
-        fprintf(stderr, "Failed to allocate memory for line\n");
+        fprintf(stderr, "Failed to allocate memory for line: %s\n", strerror(errno));
         return 1;
     }
 
@@ -108,7 +108,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
         fprintf(stdout, "Enter your move (column and row separated by space): ");
         int msg_len = getline((char **)&line, &size, stdin);
         if (msg_len == -1) {
-            fprintf(stderr, "Failed to read line\n");
+            fprintf(stderr, "Failed to read line: %s\n", strerror(errno));
             free(line);
             return 1;
         }
@@ -131,7 +131,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
 
         int s = sendto(sockfd, final_msg, sizeof(final_msg), 0, dest, sizeof(*dest));
         if (s == -1) {
-            fprintf(stderr, "Failed to send message\n");
+            fprintf(stderr, "Failed to send message: %s\n", strerror(errno));
             close(sockfd);
             free(line);
             return 1;
@@ -153,7 +153,7 @@ int end(struct message *m){
 int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
     socklen_t addr_len = sizeof(dest);
     // fprintf(stderr, "Waiting for message...\n");
-    int msg_len = recvfrom(sockfd, line, len, 0, (struct sockaddr *) &dest, &addr_len);
+    int msg_len = recvfrom(sockfd, line, len, 0, (struct sockaddr *) dest, &addr_len);
     //fprintf(stderr, "Received: %s\n", line);
     if (msg_len > 0) {
         line[msg_len] = '\0'; // Null-terminate the received string
@@ -194,7 +194,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
             return 5;
         }
     } else {
-        fprintf(stderr, "Failed to receive message");
+        fprintf(stderr, "Failed to receive message: %s\n", strerror(errno));
         return 9;
     }
     return 0;
@@ -204,7 +204,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
 int main(int argc, char* argv[]) {
     // fprintf(stderr, "Successfully running\n");
     if (argc < 3){
-        fprintf(stderr, "Missing argument. Please enter Port Number.\n");
+        fprintf(stderr, "Missing argument. Please enter Port Number: %s\n", strerror(errno));
         return 1;
     }
 
@@ -212,13 +212,14 @@ int main(int argc, char* argv[]) {
 
     int port;
     if (sscanf(argv[2], "%d", &port) != 1) {
-        fprintf(stderr, "Invalid Port.\n");
+        fprintf(stderr, "Invalid Port: %s\n", strerror(errno));
         return 3;
     }
 
     int sockfd = socket(AF_INET, SOCK_DGRAM,0);
     if (sockfd == -1){
-        fprintf(stderr, "Socket creation failed");
+        fprintf(stderr, "Socket creation failed: %s\n", strerror(errno));
+        return 4;
     // } else {
     //     fprintf(stderr, "Socket created.\n");
     }
@@ -227,8 +228,9 @@ int main(int argc, char* argv[]) {
     struct in_addr *dst_addr = malloc(sizeof(struct in_addr));
 
     if (! inet_pton(AF_INET, ip_addr, dst_addr)){
-        fprintf(stderr, "Could not turn IPaddress string to network address.\n");
+        fprintf(stderr, "Could not turn IPaddress string to network address: %s\n", strerror(errno));
         close(sockfd);
+        free(dst_addr);
         return 2;
     }
 	dest.sin_addr = *dst_addr;
@@ -239,8 +241,9 @@ int main(int argc, char* argv[]) {
     char msg[] = {0x04, 'H', 'e', 'l', 'l', 'o', '\0'};
     int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&dest, sizeof(dest));
     if (s == -1){
-        fprintf(stderr, "Failed to send message\n");
+        fprintf(stderr, "Failed to send message: %s\n", strerror(errno));
         close(sockfd);
+        free(dst_addr);
         return 4;
     }
     // fprintf(stderr, "Hello sent\n");
@@ -249,11 +252,15 @@ int main(int argc, char* argv[]) {
     while(1){
         // fprintf(stderr, "Loop entered\n");
         if (!get_message(sockfd, line, 1000, (struct sockaddr *)&dest)){
-            fprintf(stderr, "Error encountered\n");
+            fprintf(stderr, "Error encountere: %s\n", strerror(errno));
+            free(dst_addr);
+            free(line);
+            close(sockfd);
             return 1;
         }
     }
     free(line);
     close(sockfd);
+    free(dst_addr);
     return 0;
 }
