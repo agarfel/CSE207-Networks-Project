@@ -16,7 +16,7 @@ struct sockaddr_in player2;
 char *moves;
 char *last;
 int board[3][3] = {0};
-int winner = 0;
+int winner = 3;
 socklen_t clilen;
 
 int send_mym(int);
@@ -27,6 +27,13 @@ struct message{
     struct sockaddr_in client_addr;
 };
 
+/*
+Proccesses messages
+Processes the message by setting the type and the information
+
+Input: received string and a pointer to an empty message structure
+Output: pointer to message structure
+*/
 void * process_message(char* message, struct message *m){
     // fprintf(stderr, "Processing message...\n");
 
@@ -36,14 +43,21 @@ void * process_message(char* message, struct message *m){
     } else if (t == 0x05){
         m->type = 5;
     } else {
-        fprintf(stderr, "Message type not recognized: %c\n", t);
-        return 0;
+        fprintf(stderr, "ERROR: Message type not recognized: %c\n", t);
+        return NULL;
     }
     m->info = &message[1];
     // fprintf(stderr, "... message processed\n");
     return m;
 }
 
+/*
+Checks if game is over
+Updates winner as necessary
+
+Input: 
+Output:
+*/
 void check() {
     // Check rows and columns for a winner
     for (int i = 0; i < 3; i++) {
@@ -84,10 +98,18 @@ void check() {
     }
 
     if (draw) {
-        winner = 255;  // Indicate draw
+        winner = 0;  // Indicate draw
     }
 }
 
+/*
+Process TXT type messages
+Sends Welcome message if game not full,
+Sends END message if game is full
+
+input: pointer to message structure
+output: success or not
+*/
 int txt(struct message *m){
     fprintf(stderr, "[R] [TXT] %s\n", m->info);
 
@@ -99,7 +121,7 @@ int txt(struct message *m){
             player1 = m->client_addr;
             char *msg = malloc(500);
             if (!msg) {
-                fprintf(stderr, "Memory allocation failed\n");
+                fprintf(stderr, "ERROR: Memory allocation failed\n");
                 close(sockfd);
                 return 4;
             }
@@ -108,7 +130,7 @@ int txt(struct message *m){
             //fprintf(stderr, "sending: %s\n", msg);
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, clilen);
             if (s == -1){
-                fprintf(stderr, "Failed to send message\n");
+                fprintf(stderr, "ERROR: Failed to send message\n");
                 close(sockfd);
                 return 4;
                 }
@@ -120,7 +142,7 @@ int txt(struct message *m){
             player2 = m->client_addr;
             char *msg = malloc(500);
             if (!msg) {
-                fprintf(stderr, "Memory allocation failed\n");
+                fprintf(stderr, "ERROR: Memory allocation failed\n");
                 close(sockfd);
                 return 4;
             }
@@ -129,7 +151,7 @@ int txt(struct message *m){
             //fprintf(stderr, "sending: %s\n", msg);
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, clilen);
             if (s == -1){
-                fprintf(stderr, "Failed to send message\n");
+                fprintf(stderr, "ERROR: Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
@@ -140,18 +162,30 @@ int txt(struct message *m){
             char msg[] = {0x03, 0xFF};
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&( m->client_addr), sizeof(m->client_addr));
             if (s == -1){
-                fprintf(stderr, "Failed to send message\n");
+                fprintf(stderr, "ERROR: Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
             fprintf(stderr, "[S] [TXT] [] %s\n", msg+1);
             //fprintf(stderr, "Blocked player, game full\n");
         }
+    } else {
+        fprintf(stderr, "ERROR: receveived unexpected TXT message\n");
+        return 1;
     }
 
     return 0;
 }
 
+
+/*
+Process MOV type messages
+Checks if move is valid. If it isn't resends MYM message
+Updates moves and board
+
+input: pointer to message structure, player
+output: success or not
+*/
 int mov(struct message *m, int player){
 
     if (board[(int) m->info[1]][(int) m->info[0]] != 0){
@@ -161,19 +195,21 @@ int mov(struct message *m, int player){
         if (player == 1){
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), clilen);
             if (s == -1){
-                fprintf(stderr, "Failed to send message\n");
+                fprintf(stderr, "ERROR: Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
         } else {
             int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), clilen);
             if (s == -1){
-                fprintf(stderr, "Failed to send message\n");
+                fprintf(stderr, "ERROR: Failed to send message\n");
                 close(sockfd);
                 return 4;
             }
         }
-        send_mym(player);
+        if (send_mym(player)){
+            return 1;
+        }
 
         return 0;
     }
@@ -188,6 +224,13 @@ int mov(struct message *m, int player){
     return 0;
 }
 
+/*
+Send FYI type messages
+Sends FYI message
+
+input: player
+output: success or not
+*/
 int send_fyi(int player){
     char *msg = malloc(500);
     msg[0] = 1;
@@ -198,7 +241,7 @@ int send_fyi(int player){
     if (player == 1){
         int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player1), clilen);
         if (s == -1){
-            fprintf(stderr, "Failed to send message\n");
+            fprintf(stderr, "ERROR: Failed to send message\n");
             close(sockfd);
             return 4;
         }
@@ -206,7 +249,7 @@ int send_fyi(int player){
     } else {
         int s = sendto(sockfd, msg, len, 0, (struct sockaddr *)&(player2), clilen);
         if (s == -1){
-            fprintf(stderr, "Failed to send message\n");
+            fprintf(stderr, "ERROR: Failed to send message\n");
             close(sockfd);
             return 4;
         }
@@ -216,6 +259,14 @@ int send_fyi(int player){
     return 0;
 }
 
+/*
+Send MYM type messages
+Sends MYM message and waits to receive MOV message, checks received message is MOV
+Calls MOV on the processed received message
+
+input: player
+output: success or not
+*/
 int send_mym(int player){
     // Send MYM
 
@@ -224,7 +275,7 @@ int send_mym(int player){
     if (player == 1){
         int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player1), clilen);
         if (s == -1){
-            fprintf(stderr, "Failed to send message\n");
+            fprintf(stderr, "ERROR: Failed to send message\n");
             close(sockfd);
             return 4;
         }
@@ -232,7 +283,7 @@ int send_mym(int player){
     } else {
         int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&(player2), clilen);
         if (s == -1){
-            fprintf(stderr, "Failed to send message\n");
+            fprintf(stderr, "ERROR: Failed to send message\n");
             close(sockfd);
             return 4;
         }
@@ -256,29 +307,37 @@ int send_mym(int player){
             fprintf(stderr, "[R] [MOV] [%d] %s\n", player, m.info);
             mov(&m, player);
         } else {
-            fprintf(stderr, "Received wrong message type\n");
+            fprintf(stderr, "ERROR: Received wrong message type\n");
             return 5;
         }
     }
     return 0;
 }
 
-void send_end(){
+/*
+Send END type messages
+Sends END message to each player
+
+input:
+output: success or not
+*/
+int send_end(){
     char msg[] = {0x03, winner};
     int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player1, clilen);
     if (s == -1){
-        fprintf(stderr, "Failed to send message\n");
+        fprintf(stderr, "ERROR: Failed to send message\n");
         close(sockfd);
-        return;
+        return 1;
     }
     fprintf(stderr, "[S] [END] [1] %d\n", winner);
     s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&player2, clilen);
     if (s == -1){
-        fprintf(stderr, "Failed to send message\n");
+        fprintf(stderr, "ERROR: Failed to send message\n");
         close(sockfd);
-        return;
+        return 1;
     }
     fprintf(stderr, "[S] [END] [2] %d\n", winner);
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -286,20 +345,20 @@ int main(int argc, char* argv[]) {
 
         // Check Program was called correctly
         if (argc < 2){
-                fprintf(stderr, "Missing argument. Please enter Port Number.\n");
+                fprintf(stderr, "ERROR: Missing argument. Please enter Port Number.\n");
                 return 1;
         }
 
         int port;
         if (sscanf(argv[1], "%d", &port) != 1) {
-                fprintf(stderr, "Invalid Port.\n");
+                fprintf(stderr, "ERROR: Invalid Port.\n");
                 return 1;
                 }
 
         // Build and Bind Socket
         sockfd = socket(AF_INET, SOCK_DGRAM,0);
         if (sockfd == -1){
-                fprintf(stderr, "Socket creation failed");
+                fprintf(stderr, "ERROR: Socket creation failed");
         	return 2;
 	// } else {
         //        fprintf(stderr, "Socket created.\n");
@@ -312,12 +371,13 @@ int main(int argc, char* argv[]) {
    	addr_server.sin_family = AF_INET;
     addr_server.sin_addr.s_addr = INADDR_ANY;
     if (-1 == bind(sockfd, (struct sockaddr*)&addr_server, sizeof(struct sockaddr_in))){
-            fprintf(stderr, "Could not bind sockets.\n");
+            fprintf(stderr, "ERROR: Could not bind sockets.\n");
             close(sockfd);
             return 3;
     }
 	// fprintf(stderr, "Successful bind.\n");
 
+    // Waits to get 2 players
     while(nclients<2){
         char *line = malloc(100);
         int len = 100;
@@ -331,30 +391,45 @@ int main(int argc, char* argv[]) {
             process_message(line, &m);
             if (m.type == 4){
                 txt(&m);
-
             }
         }
         free(line);
     }
+    //Starts Game
     fprintf(stderr, "STARTING GAME\n");
     moves = malloc(1000);
     last = moves;
     while(1){
-        send_fyi(1);
+        if(send_fyi(1)){
+            fprintf(stderr, "ERROR: %s\n", strerror(errno));
+            return 1;
+        }
 
-        send_mym(1);
-        if (winner != 0){
+        if(send_mym(1)){
+            fprintf(stderr, "ERROR: %s\n", strerror(errno));
+            return 1;
+        }
+        if (winner != 3){
             break;
         }
-        send_fyi(2);
+        if (send_fyi(2)){
+            fprintf(stderr, "ERROR: %s\n", strerror(errno));
+            return 1;
+        }
 
-        send_mym(2);
-        if (winner != 0){
+        if(send_mym(2)){
+            fprintf(stderr, "ERROR: %s\n", strerror(errno));
+            return 1;
+        }
+        if (winner != 3){
             break;
         }
     }
     fprintf(stderr, "GAME OVER\n");
 
-    send_end();
+    if (send_end()){
+        fprintf(stderr, "ERROR: %s\n", strerror(errno));
+        return 1;
+    }
     return 0;
 }

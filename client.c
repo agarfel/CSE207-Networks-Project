@@ -15,7 +15,14 @@ struct message{
     char* info;
 };
 
+int game_over = 0;
+/*
+Proccesses messages
+Processes the message by setting the type and the information
 
+Input: received string and a pointer to an empty message structure
+Output: pointer to message structure
+*/
 void * process_message(char* message, struct message *m){
     // fprintf(stderr, "Processing message...\n");
 
@@ -35,8 +42,8 @@ void * process_message(char* message, struct message *m){
     } else if (t == 0x06){
         m->type = 6;
     } else {
-        fprintf(stderr, "Message type not recognized: %c\n", t);
-        return 0;
+        fprintf(stderr, "ERROR: Message type not recognized: %c\n", t);
+        return NULL;
     }
     m->info = &message[1];
     // fprintf(stderr, "... message processed\n");
@@ -44,12 +51,25 @@ void * process_message(char* message, struct message *m){
     return m;
 }
 
+/*
+Process TXT type messages
+Prints received message
 
+input: pointer to message structure
+output: success or not
+*/
 int txt(struct message *m){
     fprintf(stderr, "%s\n", m->info);
     return 0;
 }
 
+/*
+Process FYI type messages
+Prints board
+
+input: pointer to message structure
+output: success or not
+*/
 int fyi(struct message *m){
     int n = (int) m->info[0];
     char *buf = m->info;
@@ -68,7 +88,7 @@ int fyi(struct message *m){
         //fprintf(stderr, "row: %d\n",row);
         if (col >= 0 && col < 3 && row >= 0 && row < 3) {
             board[row][col] = player;
-            fprintf(stderr, "player: %d, col: %d, row: %d\n", player, col, row);
+            //fprintf(stderr, "player: %d, col: %d, row: %d\n", player, col, row);
         }
     }
     fprintf(stderr, "\n");
@@ -95,12 +115,19 @@ int fyi(struct message *m){
     return 0;
 }
 
+/*
+Process MYM type messages
+Asks client for a move, checks is valid, sends MOV message to server
+
+input: pointer to message structure, sockfd, server address
+output: success or not
+*/
 int mym(struct message *m, int sockfd, struct sockaddr *dest){
     size_t size = 100;
     unsigned char *line = malloc(size);
 
     if (!line) {
-        fprintf(stderr, "Failed to allocate memory for line: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Failed to allocate memory for line: %s\n", strerror(errno));
         return 1;
     }
 
@@ -108,7 +135,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
         fprintf(stdout, "Enter your move (column and row separated by space): ");
         int msg_len = getline((char **)&line, &size, stdin);
         if (msg_len == -1) {
-            fprintf(stderr, "Failed to read line: %s\n", strerror(errno));
+            fprintf(stderr, "ERROR: Failed to read line: %s\n", strerror(errno));
             free(line);
             return 1;
         }
@@ -120,7 +147,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
 
         int row, col;
         if (sscanf((char *)line, "%d %d", &col, &row) != 2 || row < 0 || row > 2 || col < 0 || col > 2) {
-            fprintf(stderr, "Invalid input. Please enter valid row and column numbers (0, 1, or 2).\n");
+            fprintf(stderr, "ERROR: Invalid input. Please enter valid row and column numbers (0, 1, or 2).\n");
             continue; // prompt for input again
         }
 
@@ -131,7 +158,7 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
 
         int s = sendto(sockfd, final_msg, sizeof(final_msg), 0, dest, sizeof(*dest));
         if (s == -1) {
-            fprintf(stderr, "Failed to send message: %s\n", strerror(errno));
+            fprintf(stderr, "ERROR: Failed to send message: %s\n", strerror(errno));
             close(sockfd);
             free(line);
             return 1;
@@ -144,12 +171,33 @@ int mym(struct message *m, int sockfd, struct sockaddr *dest){
     return 0;
 }
 
+/*
+Process END type messages
+Prints winner of the game
+
+input: pointer to message structure
+output: success or not
+*/
 int end(struct message *m){
-    fprintf(stderr, "Winner: player %u\n", m->info[0]);
+    if (m->info[0] == 0){
+        fprintf(stderr, "Game has ended: Draw");
+    } else if ((m->info[0] == 1) || (m->info[0] == 2)) {
+        fprintf(stderr, "Game has ended: the winner is player %u\n", m->info[0]);
+    } else {
+         fprintf(stderr, "ERROR: unexpected winner\n");
+         return 1;
+    }
+    game_over = 1;
     return 0;
 }
 
+/*
+Gets message
+Waits to get a message, processes it and calls the necessary function
 
+input: sockfd, line to receive message, length of line, pointer to server address
+output: success or not
+*/
 int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
     socklen_t addr_len = sizeof(dest);
     // fprintf(stderr, "Waiting for message...\n");
@@ -181,6 +229,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
             if (!end(&m)){
                 return 1;
             }
+            return 0;
         } else if (m.type == 4){
             // fprintf(stderr, "TXT message\n");
 
@@ -188,13 +237,13 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
                 return 1;
             }
         } else {
-            fprintf(stderr, "Unexpected message type\n");
+            fprintf(stderr, "ERROR: Unexpected message type\n");
             close(sockfd);
             free(line);
             return 5;
         }
     } else {
-        fprintf(stderr, "Failed to receive message: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Failed to receive message: %s\n", strerror(errno));
         return 9;
     }
     return 0;
@@ -204,7 +253,7 @@ int get_message(int sockfd, char* line, int len, struct sockaddr *dest){
 int main(int argc, char* argv[]) {
     // fprintf(stderr, "Successfully running\n");
     if (argc < 3){
-        fprintf(stderr, "Missing argument. Please enter Port Number: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Missing argument. Please enter Port Number: %s\n", strerror(errno));
         return 1;
     }
 
@@ -212,13 +261,13 @@ int main(int argc, char* argv[]) {
 
     int port;
     if (sscanf(argv[2], "%d", &port) != 1) {
-        fprintf(stderr, "Invalid Port: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Invalid Port: %s\n", strerror(errno));
         return 3;
     }
 
     int sockfd = socket(AF_INET, SOCK_DGRAM,0);
     if (sockfd == -1){
-        fprintf(stderr, "Socket creation failed: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Socket creation failed: %s\n", strerror(errno));
         return 4;
     // } else {
     //     fprintf(stderr, "Socket created.\n");
@@ -228,7 +277,7 @@ int main(int argc, char* argv[]) {
     struct in_addr *dst_addr = malloc(sizeof(struct in_addr));
 
     if (! inet_pton(AF_INET, ip_addr, dst_addr)){
-        fprintf(stderr, "Could not turn IPaddress string to network address: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Could not turn IPaddress string to network address: %s\n", strerror(errno));
         close(sockfd);
         free(dst_addr);
         return 2;
@@ -241,22 +290,26 @@ int main(int argc, char* argv[]) {
     char msg[] = {0x04, 'H', 'e', 'l', 'l', 'o', '\0'};
     int s = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&dest, sizeof(dest));
     if (s == -1){
-        fprintf(stderr, "Failed to send message: %s\n", strerror(errno));
+        fprintf(stderr, "ERROR: Failed to send message: %s\n", strerror(errno));
         close(sockfd);
         free(dst_addr);
         return 4;
     }
     // fprintf(stderr, "Hello sent\n");
-    // Receive Welcome message
+
+    // Receive messages (Start playing)
     char *line = malloc(1000);
     while(1){
         // fprintf(stderr, "Loop entered\n");
         if (!get_message(sockfd, line, 1000, (struct sockaddr *)&dest)){
-            fprintf(stderr, "Error encountere: %s\n", strerror(errno));
+            fprintf(stderr, "ERROR: %s\n", strerror(errno));
             free(dst_addr);
             free(line);
             close(sockfd);
             return 1;
+        }
+        if(game_over){
+            break;
         }
     }
     free(line);
